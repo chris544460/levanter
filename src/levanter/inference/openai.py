@@ -55,7 +55,16 @@ class InferenceServerConfig:
     tokenizer: str | None = None
 
     # Inference service/memory layout configuration
-    service: InferenceEngineConfig = field(default_factory=InferenceEngineConfig)
+    service: InferenceEngineConfig = field(
+        default_factory=lambda: InferenceEngineConfig(
+            max_pages=16,
+            max_seqs=4,
+            page_size=16,
+            max_pages_per_seq=4,
+            max_queued_tokens=16,
+            max_seqs_in_prefill=4,
+        )
+    )
 
     # Default generation parameters for API
     max_new_tokens: int = 16
@@ -70,7 +79,7 @@ class CompletionRequest(BaseModel):
     model: str
     prompt: Union[str, List[str]]
     max_tokens: int = 16
-    temperature: float = 1.0
+    temperature: float = 0.1
     stop: Optional[Union[List[str], str]] = None
     n: int = 1
     seed: Optional[int] = None
@@ -114,7 +123,7 @@ class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
     max_tokens: int = 16
-    temperature: float = 1.0
+    temperature: float = 0.1
     stop: Optional[Union[List[str], str]] = None
     n: int = 1
     seed: Optional[int] = None
@@ -230,6 +239,11 @@ class InferenceContext:
         assert self.shutdown_event.is_set() is False, "InferenceContext is shut down"
         request_id = f"req_{self._next_request_id}"
         self._next_request_id += 1
+
+        # if stop_tokens is None:
+        #     # Default to EOS token if no stop tokens provided
+        #     stop_tokens = [self.tokenizer.eos_token_id]
+        #     print("Stop tokens:", stop_tokens, self.tokenizer.decode(stop_tokens))
 
         request = InferenceRequest(
             request_id=request_id,
@@ -688,7 +702,7 @@ def _load_model(config: InferenceServerConfig, Vocab: Axis, *, key) -> LmHeadMod
     if config.checkpoint_path is not None:
         with use_cpu_device():
             model = eqx.filter_eval_shape(config.model.build, Vocab, key=key)
-            model = load_checkpoint(model, config.checkpoint_path, subpath="model")
+            model = load_checkpoint(model, config.checkpoint_path)
             model = mp.cast_to_compute(model)
         return model
     else:
